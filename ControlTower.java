@@ -51,6 +51,9 @@ public class ControlTower extends Thread {
 
     // ===== 4. RED =====
     private volatile ServerSocket serverSocket;
+    private volatile Thread serverThread;
+    private final List<Thread> networkClientThreads = new ArrayList<>();
+    private final List<Airplane> receivedAirplanes = new ArrayList<>();
     private final AtomicInteger flightsSent = new AtomicInteger();
     private final AtomicInteger flightsReceived = new AtomicInteger();
     private final AtomicInteger flightsHeld = new AtomicInteger();
@@ -258,6 +261,7 @@ public class ControlTower extends Thread {
         serverSocket = new ServerSocket(port); // falla aqui si el puerto esta ocupado
         Thread server = new Thread(this::listen, "TorreServidor-" + code);
         server.setDaemon(true);
+        this.serverThread = server;
         server.start();
     }
 
@@ -291,6 +295,7 @@ public class ControlTower extends Thread {
             }
             Airplane arriving = new Airplane(data, this);
             onRunway.add(arriving);
+            receivedAirplanes.add(arriving);
             flightsReceived.incrementAndGet();
             runwayChanged.signalAll();
             return arriving;
@@ -305,6 +310,9 @@ public class ControlTower extends Thread {
     Thread sendFlight(Airplane.FlightData data, String host, int port) {
         Thread client = new Thread(() -> transmit(data, host, port),
                 "TorreCliente-" + code + "-" + data.flightId);
+        synchronized (networkClientThreads) {
+            networkClientThreads.add(client);
+        }
         client.start();
         return client;
     }
@@ -366,6 +374,21 @@ public class ControlTower extends Thread {
     public int getFlightsSent() { return flightsSent.get(); }
     public int getFlightsReceived() { return flightsReceived.get(); }
     public int getFlightsHeld() { return flightsHeld.get(); }
+
+    public List<Airplane> getReceivedAirplanes() {
+        runwayLock.lock();
+        try { return new ArrayList<>(receivedAirplanes); }
+        finally { runwayLock.unlock(); }
+    }
+
+    public List<Thread> getNetworkThreads() {
+        List<Thread> list = new ArrayList<>();
+        if (serverThread != null) list.add(serverThread);
+        synchronized (networkClientThreads) {
+            list.addAll(networkClientThreads);
+        }
+        return list;
+    }
 
     // ===================================================================
     // DEMO: dos aeropuertos en la misma computadora (CDMX envia a GDL)
