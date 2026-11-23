@@ -7,10 +7,12 @@ public class Client extends Thread {
 
     public enum Status {
         ARRIVING, WAITING, BEING_QUESTIONED, READY_TO_BOARD,
-        ARRESTED, PROCESSED, CANCELLED
+        ARRESTED, PROCESSED, CANCELLED,
+        BOARDING, ON_BOARD, FLYING, ARRIVED, TRANSFERRED
     }
 
     private final SecurityArea security;
+    private final ControlTower tower; // null = solo seguridad, sin abordar
     private final boolean terrorist;
     private final long waitingMillis;
     private volatile Status status = Status.ARRIVING;
@@ -23,9 +25,15 @@ public class Client extends Thread {
 
     /** Random inyectable para reproducir la simulacion y probar el limite del 5%. */
     public Client(int id, SecurityArea security, long waitingMillis, Random random) {
+        this(id, security, null, waitingMillis, random);
+    }
+
+    /** Cliente que, al salir de seguridad, se forma para abordar en la torre indicada. */
+    public Client(int id, SecurityArea security, ControlTower tower, long waitingMillis, Random random) {
         super("Cliente-" + id);
         if (waitingMillis < 0) throw new IllegalArgumentException("Tiempo negativo");
         this.security = Objects.requireNonNull(security);
+        this.tower = tower;
         this.waitingMillis = waitingMillis;
         this.terrorist = Objects.requireNonNull(random).nextDouble() < TERRORIST_PROBABILITY;
     }
@@ -41,8 +49,10 @@ public class Client extends Thread {
             security.enter(this);
             Thread.sleep(waitingMillis);
             security.finishWaiting(this);
+            if (tower != null && status == Status.READY_TO_BOARD) tower.board(this);
         } catch (InterruptedException e) {
             security.cancel(this);
+            if (tower != null) tower.cancel(this);
             Thread.currentThread().interrupt();
         }
     }
